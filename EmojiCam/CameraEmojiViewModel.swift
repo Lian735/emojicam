@@ -47,9 +47,7 @@ class CameraEmojiViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutput
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
         if let connection = output.connection(with: .video) {
-            if #available(iOS 17.0, *) {
-                try? connection.setVideoRotationAngle(90)
-            } else {
+            if connection.isVideoOrientationSupported {
                 connection.videoOrientation = .portrait
             }
         }
