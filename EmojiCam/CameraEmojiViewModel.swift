@@ -1,4 +1,5 @@
 import SwiftUI
+import Combine
 import AVFoundation
 import CoreImage
 import CoreGraphics
@@ -45,7 +46,13 @@ class CameraEmojiViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutput
         output.setSampleBufferDelegate(self, queue: queue)
         guard session.canAddOutput(output) else { return }
         session.addOutput(output)
-        output.connection(with: .video)?.videoOrientation = .portrait
+        if let connection = output.connection(with: .video) {
+            if #available(iOS 17.0, *) {
+                try? connection.setVideoRotationAngle(90)
+            } else {
+                connection.videoOrientation = .portrait
+            }
+        }
         session.commitConfiguration()
     }
 
@@ -58,8 +65,8 @@ class CameraEmojiViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutput
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
         guard let scaled = cgImage.scaled(to: CGSize(width: columns, height: rows)) else { return }
-        guard let data = scaled.dataProvider?.data else { return }
-        let ptr = CFDataGetBytePtr(data)
+        guard let data = scaled.dataProvider?.data,
+              let ptr = CFDataGetBytePtr(data) else { return }
 
         var newGrid: [String] = []
         for y in 0..<rows {
