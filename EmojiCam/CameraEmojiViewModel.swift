@@ -51,6 +51,10 @@ class CameraEmojiViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutput
             if connection.isVideoRotationAngleSupported(portraitAngle) {
                 connection.videoRotationAngle = portraitAngle
             }
+            if connection.isVideoMirroringSupported {
+                connection.automaticallyAdjustsVideoMirroring = false
+                connection.isVideoMirrored = false
+            }
         }
         session.commitConfiguration()
     }
@@ -63,17 +67,42 @@ class CameraEmojiViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutput
     private func process(pixelBuffer: CVPixelBuffer) {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else { return }
-        guard let scaled = cgImage.scaled(to: CGSize(width: columns, height: rows)) else { return }
-        guard let data = scaled.dataProvider?.data,
+
+        let width = cgImage.width
+        let height = cgImage.height
+        let side = min(width, height)
+        let xOffset = (width - side) / 2
+        let yOffset = (height - side) / 2
+        guard let square = cgImage.cropping(to: CGRect(x: xOffset, y: yOffset, width: side, height: side)) else { return }
+        guard let data = square.dataProvider?.data,
               let ptr = CFDataGetBytePtr(data) else { return }
 
         var newGrid: [String] = []
-        for y in 0..<rows {
-            for x in 0..<columns {
-                let offset = (y * columns + x) * 4
-                let r = Int(ptr[offset])
-                let g = Int(ptr[offset + 1])
-                let b = Int(ptr[offset + 2])
+        for row in 0..<rows {
+            let startY = Int(Float(row) * Float(side) / Float(rows))
+            let endY = Int(Float(row + 1) * Float(side) / Float(rows))
+            for col in 0..<columns {
+                let startX = Int(Float(col) * Float(side) / Float(columns))
+                let endX = Int(Float(col + 1) * Float(side) / Float(columns))
+                var rTotal = 0
+                var gTotal = 0
+                var bTotal = 0
+                var count = 0
+                for y in startY..<endY {
+                    for x in startX..<endX {
+                        let offset = (y * side + x) * 4
+                        let r = Int(ptr[offset])
+                        let g = Int(ptr[offset + 1])
+                        let b = Int(ptr[offset + 2])
+                        rTotal += r
+                        gTotal += g
+                        bTotal += b
+                        count += 1
+                    }
+                }
+                let r = rTotal / max(count, 1)
+                let g = gTotal / max(count, 1)
+                let b = bTotal / max(count, 1)
                 newGrid.append(closestEmoji(r: r, g: g, b: b))
             }
         }
@@ -108,17 +137,5 @@ class CameraEmojiViewModel: NSObject, ObservableObject, AVCaptureVideoDataOutput
             }
         }
         return best.emoji
-    }
-}
-
-private extension CGImage {
-    func scaled(to size: CGSize) -> CGImage? {
-        guard let colorSpace = self.colorSpace else { return nil }
-        let width = Int(size.width)
-        let height = Int(size.height)
-        guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: colorSpace, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        context.interpolationQuality = .none
-        context.draw(self, in: CGRect(origin: .zero, size: size))
-        return context.makeImage()
     }
 }
